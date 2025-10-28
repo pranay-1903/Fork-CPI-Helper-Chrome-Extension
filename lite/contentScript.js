@@ -65,23 +65,26 @@
   }
 
   async function getCountsForIflow(symbolicName){
-    // Completed count (last 1 day window for responsiveness)
+    // Count across all available logs
     const to = new Date();
-    const from = new Date(to.getTime() - 24*60*60*1000);
+    const from = new Date(to.getTime() - 24*60*60*1000); // kept for potential future narrowing
     const iso = d=>new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().replace('Z','');
     const base = '/'+state.urlExtension+"odata/api/v1/MessageProcessingLogs?$format=json";
-    const common = ` and Status ne 'DISCARDED' and LogStart ge datetime'${iso(from)}' and LogStart le datetime'${iso(to)}'`;
+    const common = ` and Status ne 'DISCARDED'`;
 
     // Escape single quotes for OData literal and URL-encode the entire $filter expression
     const esc = (s)=>String(s).replace(/'/g, "''");
     const filterCompleted = `IntegrationFlowName eq '${esc(symbolicName)}' and Status eq 'COMPLETED'${common}`;
     const filterFailed    = `IntegrationFlowName eq '${esc(symbolicName)}' and Status eq 'FAILED'${common}`;
 
-    const qCompleted = `${base}&$filter=${encodeURIComponent(filterCompleted)}&$select=MessageGuid`;
-    const qFailed    = `${base}&$filter=${encodeURIComponent(filterFailed)}&$select=MessageGuid`;
+    const tail = '&$inlinecount=allpages&$top=0';
+    const qCompleted = `${base}&$filter=${encodeURIComponent(filterCompleted)}${tail}`;
+    const qFailed    = `${base}&$filter=${encodeURIComponent(filterFailed)}${tail}`;
 
-    const completed = JSON.parse(await http('GET', qCompleted)).d.results.length;
-    const failed    = JSON.parse(await http('GET', qFailed)).d.results.length;
+    const respC = JSON.parse(await http('GET', qCompleted)).d || {};
+    const respF = JSON.parse(await http('GET', qFailed)).d || {};
+    const completed = respC.__count !== undefined ? parseInt(respC.__count, 10) : (respC.results ? respC.results.length : 0);
+    const failed    = respF.__count !== undefined ? parseInt(respF.__count, 10) : (respF.results ? respF.results.length : 0);
     return { completed, failed };
   }
 
