@@ -72,8 +72,13 @@
     const base = '/'+state.urlExtension+"odata/api/v1/MessageProcessingLogs?$format=json";
     const common = ` and Status ne 'DISCARDED' and LogStart ge datetime'${iso(from)}' and LogStart le datetime'${iso(to)}'`;
 
-    const qCompleted = `${base}&$filter=IntegrationFlowName eq '${encodeURIComponent(symbolicName)}' and Status eq 'COMPLETED'${common}&$select=MessageGuid`;
-    const qFailed    = `${base}&$filter=IntegrationFlowName eq '${encodeURIComponent(symbolicName)}' and Status eq 'FAILED'${common}&$select=MessageGuid`;
+    // Escape single quotes for OData literal and URL-encode the entire $filter expression
+    const esc = (s)=>String(s).replace(/'/g, "''");
+    const filterCompleted = `IntegrationFlowName eq '${esc(symbolicName)}' and Status eq 'COMPLETED'${common}`;
+    const filterFailed    = `IntegrationFlowName eq '${esc(symbolicName)}' and Status eq 'FAILED'${common}`;
+
+    const qCompleted = `${base}&$filter=${encodeURIComponent(filterCompleted)}&$select=MessageGuid`;
+    const qFailed    = `${base}&$filter=${encodeURIComponent(filterFailed)}&$select=MessageGuid`;
 
     const completed = JSON.parse(await http('GET', qCompleted)).d.results.length;
     const failed    = JSON.parse(await http('GET', qFailed)).d.results.length;
