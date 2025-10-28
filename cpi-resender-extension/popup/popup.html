@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>CPI - Resender</title>
+  <style>
+    :root { --fg: #111; --bg: #fff; --muted: #666; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 0.75rem; background: var(--bg); color: var(--fg); width: 520px; }
+    h1 { font-size: 1rem; margin: 0 0 .5rem; }
+    .meta { color: var(--muted); font-size: .8rem; margin-bottom: .5rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: .5rem .4rem; border-bottom: 1px solid #e7e7e7; font-size: .9rem; }
+    th { text-align: left; background: #f6f6f6; position: sticky; top: 0; }
+    .right { text-align: right; }
+    .status { font-variant-numeric: tabular-nums; }
+    .error { color: #b00020; }
+    .ok { color: #1b5e20; }
+  </style>
+</head>
+<body>
+  <h1>CPI - Resender</h1>
+  <div class="meta" id="meta">Loading…</div>
+  <div id="error" class="error"></div>
+  <table id="tbl" aria-label="iFlows">
+    <thead>
+      <tr>
+        <th>iFlow Name</th>
+        <th class="right">Completed</th>
+        <th class="right">Failed</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <script src="popup.js"></script>
+</body>
+</html>
