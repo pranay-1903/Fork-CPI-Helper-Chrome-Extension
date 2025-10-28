@@ -1,0 +1,39 @@
+{
+  "name": "CPI Helper Lite",
+  "short_name": "CPI Lite",
+  "version": "0.1.0",
+  "description": "Shows all iFlows and their completed/failed message counts in the current tenant.",
+  "manifest_version": 3,
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://*.hana.ondemand.com/itspaces/*",
+    "https://*.platform.sapcloud.cn/itspaces/*",
+    "https://*.hana.ondemand.com/shell/*",
+    "https://*.platform.sapcloud.cn/shell/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/v4/16.png",
+      "32": "images/v4/32.png",
+      "48": "images/v4/48.png",
+      "128": "images/v4/128.png"
+    }
+  },
+  "icons": {
+    "16": "images/v4/16.png",
+    "32": "images/v4/32.png",
+    "48": "images/v4/48.png",
+    "128": "images/v4/128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.hana.ondemand.com/*",
+        "https://*.platform.sapcloud.cn/*"
+      ],
+      "js": ["contentScript.js", "lib/xmlToJson/xmlToJson.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
