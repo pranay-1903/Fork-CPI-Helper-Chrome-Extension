@@ -212,12 +212,84 @@
     root.appendChild(panel);
   }
 
+  function findMainContentContainer(){
+    const candidates = [
+      document.querySelector('[id$="--toolPage-contentWrapper"] .sapTntToolPageContent'),
+      document.querySelector('.sapTntToolPageContent'),
+      document.querySelector('#shell--content'),
+      document.querySelector('[id$="--pageContent"]'),
+      document.querySelector('main'),
+    ];
+    return candidates.find(Boolean) || null;
+  }
+
+  function renderFullPage(rows){
+    ensureStyles();
+    const container = findMainContentContainer();
+    if (!container){
+      // fallback to floating panel if tool page not found yet
+      renderInPage(rows);
+      return;
+    }
+    let root = container.querySelector('#cpi-lite-page-root');
+    const wrapperClass = isDark() ? 'cpi-lite-dark' : '';
+    if (!root){
+      root = document.createElement('div');
+      root.id = 'cpi-lite-page-root';
+      container.appendChild(root);
+    }
+    root.className = wrapperClass;
+    root.innerHTML = '';
+
+    const page = document.createElement('section');
+    page.className = 'cpi-lite-body';
+    const header = document.createElement('div');
+    header.className = 'cpi-lite-header';
+    const title = document.createElement('div');
+    title.className = 'cpi-lite-title';
+    title.textContent = 'CPI Helper Lite';
+    header.appendChild(title);
+    const table = document.createElement('table');
+    table.className = 'cpi-lite-table';
+    table.innerHTML = '<thead><tr><th style="width:55%">iFlow</th><th style="width:22%" class="cpi-lite-count">Completed</th><th style="width:23%" class="cpi-lite-count">Failed</th></tr></thead><tbody></tbody>';
+    const tbody = table.querySelector('tbody');
+    const fmt = n=> new Intl.NumberFormat().format(n);
+    rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+    for (const r of rows){
+      const tr = document.createElement('tr');
+      const tdName = document.createElement('td');
+      const tdOk = document.createElement('td');
+      const tdFail = document.createElement('td');
+      tdName.textContent = r.name || r.symbolicName;
+      tdOk.textContent = fmt(r.completed||0);
+      tdFail.textContent = fmt(r.failed||0);
+      tdOk.className = 'cpi-lite-count cpi-lite-ok';
+      tdFail.className = 'cpi-lite-count cpi-lite-fail';
+      tr.appendChild(tdName);
+      tr.appendChild(tdOk);
+      tr.appendChild(tdFail);
+      tbody.appendChild(tr);
+    }
+    page.appendChild(header);
+    page.appendChild(table);
+    root.appendChild(page);
+  }
+
   async function openInPage(){
     try{
-      // show a lightweight shell immediately
-      renderInPage([]);
+      // Prefer full-page render if we find the main content area
+      const main = findMainContentContainer();
+      if (main){
+        renderFullPage([]);
+      } else {
+        renderInPage([]);
+      }
       const data = await collect();
-      renderInPage(data||[]);
+      if (main){
+        renderFullPage(data||[]);
+      } else {
+        renderInPage(data||[]);
+      }
     }catch(e){
       // In case of error, still show panel with message
       ensureStyles();
