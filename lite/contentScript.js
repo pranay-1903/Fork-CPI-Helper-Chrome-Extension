@@ -133,11 +133,12 @@
     style.textContent = `
       .cpi-lite-panel{position:fixed; inset:auto 0 0 auto; top:64px; right:16px; width:min(860px, 92vw); height:calc(100vh - 80px); background:#fff; color:#1b1b1b; box-shadow:0 6px 24px rgba(0,0,0,.2); border-radius:8px; display:flex; flex-direction:column; z-index:2147483000;}
       .cpi-lite-dark .cpi-lite-panel{background:#1c2834; color:#eaecef;}
+      #cpi-lite-page-root{ height:100%; display:flex; flex-direction:column; }
       .cpi-lite-header{display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid rgba(0,0,0,.08)}
       .cpi-lite-dark .cpi-lite-header{border-bottom-color:rgba(255,255,255,.12)}
       .cpi-lite-title{font-size:14px; font-weight:600}
       .cpi-lite-close{border:none; background:transparent; cursor:pointer; font-size:16px}
-      .cpi-lite-body{padding:12px; overflow:auto}
+      .cpi-lite-body{padding:12px; overflow:auto; height:100%; flex:1;}
       .cpi-lite-table{border-collapse:collapse; width:100%}
       .cpi-lite-table th,.cpi-lite-table td{border-bottom:1px solid rgba(0,0,0,.06); padding:8px; text-align:left}
       .cpi-lite-table th{background:rgba(0,0,0,.03); position:sticky; top:0; z-index:1}
