@@ -133,7 +133,7 @@
       const entries = feed && feed.entry ? (Array.isArray(feed.entry) ? feed.entry : [feed.entry]) : [];
       const list = [];
       for (const en of entries){
-        const props = en && en.content && en.content.properties ? en.content.properties : (en.content && en.content.m\:properties) || {};
+        const props = (en && en.content && (en.content["m:properties"] || en.content.properties)) || {};
         list.push({
           messageId: props.MessageGuid || props.MessageID || props.MessageId || '',
           status: props.Status || 'FAILED',
