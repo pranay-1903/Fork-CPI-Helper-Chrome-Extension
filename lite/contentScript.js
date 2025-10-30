@@ -106,6 +106,24 @@
     return results;
   }
 
+  async function listFailedMessagesForIflow(symbolicName, top=200){
+    const esc = (s)=>String(s).replace(/'/g, "''");
+    const filter = `IntegrationFlowName eq '${esc(symbolicName)}' and Status eq 'FAILED'`;
+    const select = ['MessageGuid','Status','ErrorText','LogStart','IntegrationFlowName'];
+    const url = '/' + state.urlExtension + `odata/api/v1/MessageProcessingLogs?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$select=${encodeURIComponent(select.join(','))}&$top=${encodeURIComponent(String(top))}`;
+    const txt = await http('GET', url, 'application/json');
+    let json;
+    try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
+    const arr = (json && (json.value || (json.d && json.d.results))) || [];
+    return arr.map(x=>({
+      messageId: x.MessageGuid || x.MessageID || x.MessageId || x.Guid || '',
+      status: x.Status || 'FAILED',
+      errorText: x.ErrorText || x.Error || '',
+      logStart: x.LogStart || x.TimeStamp || null,
+      integrationFlowName: x.IntegrationFlowName || symbolicName
+    }));
+  }
+
   // Handle requests from popup
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
     if (msg && msg.type === 'CPI_LITE_LOAD'){
@@ -154,6 +172,7 @@
       .cpi-lite-btn:disabled{ opacity:.6; cursor:default }
       .cpi-lite-pager{ display:flex; gap:8px; align-items:center; margin:10px 0 }
       .cpi-lite-link{ color:#0a66c2; cursor:pointer; user-select:none }
+      .cpi-lite-back{ padding:6px 10px; border:1px solid rgba(0,0,0,.2); border-radius:6px; background:#eef3f8; color:#1b1b1b; cursor:pointer; margin-right:8px }
     `;
     document.head.appendChild(style);
   }
@@ -228,9 +247,14 @@
       const tdFail = document.createElement('td');
       tdName.textContent = r.name || r.symbolicName;
       tdOk.textContent = fmt(r.completed||0);
-      tdFail.textContent = fmt(r.failed||0);
+      const failLink = document.createElement('a');
+      failLink.href = '#';
+      failLink.className = 'cpi-lite-link cpi-lite-fail';
+      failLink.textContent = fmt(r.failed||0);
+      failLink.addEventListener('click', (ev)=>{ ev.preventDefault(); showFailedFor(r.symbolicName || r.name, r.name || r.symbolicName); });
+      tdFail.appendChild(failLink);
       tdOk.className = 'cpi-lite-count cpi-lite-ok';
-      tdFail.className = 'cpi-lite-count cpi-lite-fail';
+      tdFail.className = 'cpi-lite-count';
       tr.appendChild(tdName);
       tr.appendChild(tdOk);
       tr.appendChild(tdFail);
@@ -365,9 +389,14 @@
       const tdFail = document.createElement('td');
       tdName.textContent = r.name || r.symbolicName;
       tdOk.textContent = fmt(r.completed||0);
-      tdFail.textContent = fmt(r.failed||0);
+      const failLink = document.createElement('a');
+      failLink.href = '#';
+      failLink.className = 'cpi-lite-link cpi-lite-fail';
+      failLink.textContent = fmt(r.failed||0);
+      failLink.addEventListener('click', (ev)=>{ ev.preventDefault(); showFailedFor(r.symbolicName || r.name, r.name || r.symbolicName); });
+      tdFail.appendChild(failLink);
       tdOk.className = 'cpi-lite-count cpi-lite-ok';
-      tdFail.className = 'cpi-lite-count cpi-lite-fail';
+      tdFail.className = 'cpi-lite-count';
       tr.appendChild(tdName);
       tr.appendChild(tdOk);
       tr.appendChild(tdFail);
@@ -415,6 +444,116 @@
         status.textContent = String(e && e.message || e);
       }
     });
+  }
+
+  function renderFailedPageFull(rows, displayName){
+    ensureStyles();
+    const container = findMainContentContainer();
+    if (!container){ renderInPage([]); return; }
+    let root = container.querySelector('#cpi-lite-page-root');
+    if (!root){ root = document.createElement('div'); root.id='cpi-lite-page-root'; container.appendChild(root); }
+    root.className = isDark() ? 'cpi-lite-dark' : '';
+    root.innerHTML = '';
+
+    const page = document.createElement('section');
+    page.className = 'cpi-lite-body';
+    const header = document.createElement('div');
+    header.className = 'cpi-lite-header';
+    const back = document.createElement('button');
+    back.className = 'cpi-lite-back';
+    back.textContent = '← Back';
+    back.onclick = ()=>{ renderFullPage(state.cachedRows); activateFullPageMode(); };
+    const title = document.createElement('div');
+    title.className = 'cpi-lite-title';
+    title.textContent = `Failed Messages — ${displayName}`;
+    header.appendChild(back);
+    header.appendChild(title);
+
+    const table = document.createElement('table');
+    table.className = 'cpi-lite-table';
+    table.innerHTML = '<thead><tr><th style="width:36%">Message ID</th><th style="width:14%" class="cpi-lite-count">Status</th><th style="width:50%">Error Text</th></tr></thead><tbody></tbody>';
+    const tbody = table.querySelector('tbody');
+    for (const m of rows){
+      const tr = document.createElement('tr');
+      const tdId = document.createElement('td');
+      const tdStatus = document.createElement('td');
+      const tdErr = document.createElement('td');
+      tdId.textContent = m.messageId || '';
+      tdStatus.textContent = m.status || '';
+      tdStatus.className = 'cpi-lite-count cpi-lite-fail';
+      tdErr.textContent = m.errorText || '';
+      tr.appendChild(tdId); tr.appendChild(tdStatus); tr.appendChild(tdErr);
+      tbody.appendChild(tr);
+    }
+    page.appendChild(header);
+    page.appendChild(table);
+    root.appendChild(page);
+  }
+
+  function renderFailedPagePanel(rows, displayName){
+    ensureStyles();
+    const rootId = 'cpi-lite-panel-root';
+    let root = document.getElementById(rootId);
+    if (!root){ root = document.createElement('div'); root.id=rootId; document.body.appendChild(root); }
+    root.className = isDark() ? 'cpi-lite-dark' : '';
+    root.innerHTML = '';
+
+    const panel = document.createElement('div');
+    panel.className = 'cpi-lite-panel';
+    const header = document.createElement('div');
+    header.className = 'cpi-lite-header';
+    const back = document.createElement('button');
+    back.className = 'cpi-lite-back';
+    back.textContent = '← Back';
+    back.onclick = ()=>{ renderInPage(state.cachedRows); };
+    const title = document.createElement('div');
+    title.className = 'cpi-lite-title';
+    title.textContent = `Failed Messages — ${displayName}`;
+    header.appendChild(back);
+    header.appendChild(title);
+    const body = document.createElement('div');
+    body.className = 'cpi-lite-body';
+    const table = document.createElement('table');
+    table.className = 'cpi-lite-table';
+    table.innerHTML = '<thead><tr><th style="width:36%">Message ID</th><th style="width:14%" class="cpi-lite-count">Status</th><th style="width:50%">Error Text</th></tr></thead><tbody></tbody>';
+    const tbody = table.querySelector('tbody');
+    for (const m of rows){
+      const tr = document.createElement('tr');
+      const tdId = document.createElement('td');
+      const tdStatus = document.createElement('td');
+      const tdErr = document.createElement('td');
+      tdId.textContent = m.messageId || '';
+      tdStatus.textContent = m.status || '';
+      tdStatus.className = 'cpi-lite-count cpi-lite-fail';
+      tdErr.textContent = m.errorText || '';
+      tr.appendChild(tdId); tr.appendChild(tdStatus); tr.appendChild(tdErr);
+      tbody.appendChild(tr);
+    }
+    body.appendChild(table);
+    panel.appendChild(header);
+    panel.appendChild(body);
+    root.appendChild(panel);
+  }
+
+  async function showFailedFor(symbolicName, displayName){
+    const main = findMainContentContainer();
+    try{
+      if (main){
+        renderFailedPageFull([], displayName);
+        activateFullPageMode();
+        const list = await listFailedMessagesForIflow(symbolicName, 500);
+        renderFailedPageFull(list, displayName);
+        activateFullPageMode();
+      } else {
+        renderFailedPagePanel([], displayName);
+        const list = await listFailedMessagesForIflow(symbolicName, 500);
+        renderFailedPagePanel(list, displayName);
+      }
+    }catch(e){
+      const errRow = [{ messageId:'', status:'FAILED', errorText: String(e && e.message || e) }];
+      if (main){ renderFailedPageFull(errRow, displayName); activateFullPageMode(); }
+      else { renderFailedPagePanel(errRow, displayName); }
+    }
   }
 
   function findSplitDetailContainer(){
