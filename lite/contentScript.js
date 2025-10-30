@@ -109,19 +109,41 @@
   async function listFailedMessagesForIflow(symbolicName, top=200){
     const esc = (s)=>String(s).replace(/'/g, "''");
     const filter = `IntegrationFlowName eq '${esc(symbolicName)}' and Status eq 'FAILED'`;
-    const select = ['MessageGuid','Status','ErrorText','LogStart','IntegrationFlowName'];
-    const url = '/' + state.urlExtension + `odata/api/v1/MessageProcessingLogs?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$select=${encodeURIComponent(select.join(','))}&$top=${encodeURIComponent(String(top))}`;
-    const txt = await http('GET', url, 'application/json');
-    let json;
-    try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
-    const arr = (json && (json.value || (json.d && json.d.results))) || [];
-    return arr.map(x=>({
-      messageId: x.MessageGuid || x.MessageID || x.MessageId || x.Guid || '',
-      status: x.Status || 'FAILED',
-      errorText: x.ErrorText || x.Error || '',
-      logStart: x.LogStart || x.TimeStamp || null,
-      integrationFlowName: x.IntegrationFlowName || symbolicName
-    }));
+    const base = '/' + state.urlExtension + 'odata/api/v1/MessageProcessingLogs';
+    const qs = `?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$top=${encodeURIComponent(String(top))}&$format=json`;
+    // Try JSON first
+    try{
+      const txt = await http('GET', base + qs, 'application/json');
+      let json;
+      try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
+      const arr = (json && (json.value || (json.d && json.d.results))) || [];
+      return arr.map(x=>({
+        messageId: x.MessageGuid || x.MessageID || x.MessageId || x.Guid || '',
+        status: x.Status || 'FAILED',
+        errorText: x.ErrorText || x.Error || '',
+        logStart: x.LogStart || x.TimeStamp || null,
+        integrationFlowName: x.IntegrationFlowName || symbolicName
+      }));
+    }catch(e){
+      // Fallback to XML if JSON path is unavailable
+      const txt = await http('GET', base + `?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$top=${encodeURIComponent(String(top))}`, 'application/xml');
+      const parsed = new XmlToJson().parse(txt);
+      // best-effort extraction for OData v2 XML
+      const feed = parsed && parsed.feed;
+      const entries = feed && feed.entry ? (Array.isArray(feed.entry) ? feed.entry : [feed.entry]) : [];
+      const list = [];
+      for (const en of entries){
+        const props = en && en.content && en.content.properties ? en.content.properties : (en.content && en.content.m\:properties) || {};
+        list.push({
+          messageId: props.MessageGuid || props.MessageID || props.MessageId || '',
+          status: props.Status || 'FAILED',
+          errorText: props.ErrorText || props.Error || '',
+          logStart: props.LogStart || null,
+          integrationFlowName: props.IntegrationFlowName || symbolicName
+        });
+      }
+      return list;
+    }
   }
 
   // Handle requests from popup
