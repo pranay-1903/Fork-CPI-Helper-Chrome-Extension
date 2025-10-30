@@ -215,6 +215,11 @@
   function findMainContentContainer(){
     // Try a wide range of selectors used by UI5 ToolPage layouts
     const candidates = [
+      // Integration Suite split app detail area (matches Sprintegrate placement)
+      document.querySelector('#shell--splitApp-Detail'),
+      document.querySelector('#mainPage-cont'),
+      document.querySelector('#mainPage'),
+      // ToolPage main content wrappers
       // Common ToolPage content wrappers
       document.querySelector('[id$="--toolPage-contentWrapper"] .sapTntToolPageContent'),
       document.querySelector('[id$="--toolPage-contentWrapper"]'),
@@ -304,10 +309,21 @@
 
   async function openInPage(){
     try{
-      // Always use the non-invasive right-side panel to avoid interfering with host layout
-      renderInPage([]);
-      const data = await collect();
-      renderInPage(data||[]);
+      const main = findMainContentContainer();
+      if (main){
+        // Remove any existing floating panel when switching to full-page embed
+        const floatRoot = document.getElementById('cpi-lite-panel-root');
+        if (floatRoot) floatRoot.remove();
+        // Initial skeleton while data loads
+        renderFullPage([]);
+        const data = await collect();
+        renderFullPage(data||[]);
+      } else {
+        // Fallback: show floating right-side panel
+        renderInPage([]);
+        const data = await collect();
+        renderInPage(data||[]);
+      }
     }catch(e){
       // In case of error, still show panel with message
       ensureStyles();
