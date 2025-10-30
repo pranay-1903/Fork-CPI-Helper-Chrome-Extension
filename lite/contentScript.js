@@ -109,62 +109,98 @@
   async function listFailedMessagesForIflow(symbolicName, top=200){
     const esc = (s)=>String(s).replace(/'/g, "''");
     const filter = `IntegrationFlowName eq '${esc(symbolicName)}' and Status eq 'FAILED'`;
-    const base = '/' + state.urlExtension + 'odata/api/v1/MessageProcessingLogs';
-    const qs = `?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$top=${encodeURIComponent(String(top))}&$format=json&$expand=${encodeURIComponent('ErrorInformation')}`;
-    // Try JSON first
-    try{
-      const txt = await http('GET', base + qs, 'application/json');
-      let json;
-      try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
+    const baseLogs = '/' + state.urlExtension + 'odata/api/v1/MessageProcessingLogs';
+    const logsQs = `?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$top=${encodeURIComponent(String(top))}&$format=json`;
+
+    function normalizeJsonList(txt){
+      let json; try{ json = JSON.parse(txt); }catch(_e){ return []; }
       const arr = (json && (json.value || (json.d && json.d.results))) || [];
-      const toArray = (v)=> Array.isArray(v) ? v : (v && v.results ? v.results : (v ? [v] : []));
       const getAny = (obj, names)=>{
         for (const name of names){
-          if (obj == null) break;
+          if (!obj) break;
           if (Object.prototype.hasOwnProperty.call(obj, name)) return obj[name];
           const lower = Object.keys(obj).find(k=>k.toLowerCase()===name.toLowerCase());
           if (lower) return obj[lower];
         }
         return undefined;
       };
-      return arr.map(x=>{
-        const errs = toArray(getAny(x, ['ErrorInformation']));
-        const details = errs.map(e=> getAny(e, ['ErrorText','LongText','Message','Text','LogMessage']) || '').filter(Boolean).join(' | ');
-        const id = getAny(x, ['MessageGuid','MessageID','MessageId','Guid','GUID','MessageGUID']);
-        const status = getAny(x, ['Status']) || 'FAILED';
-        const errText = getAny(x, ['ErrorText','Error','ErrorMessage']) || '';
-        const logStart = getAny(x, ['LogStart','TimeStamp']) || null;
-        const iflow = getAny(x, ['IntegrationFlowName']) || symbolicName;
-        return {
-          messageId: id != null ? String(id) : '',
-          status: String(status),
-          errorText: String(errText),
-          errorDetails: String(details || errText),
-          logStart,
-          integrationFlowName: String(iflow)
-        };
-      });
-    }catch(e){
-      // Fallback to XML if JSON path is unavailable
-      const txt = await http('GET', base + `?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$top=${encodeURIComponent(String(top))}`, 'application/xml');
+      return arr.map(x=>({
+        messageId: String(getAny(x, ['MessageGuid','MessageID','MessageId','Guid','GUID','MessageGUID']) || ''),
+        status: String(getAny(x, ['Status']) || 'FAILED'),
+        errorText: String(getAny(x, ['ErrorText','Error','ErrorMessage']) || ''),
+        logStart: getAny(x, ['LogStart','TimeStamp']) || null,
+        integrationFlowName: String(getAny(x, ['IntegrationFlowName']) || symbolicName)
+      }));
+    }
+
+    function normalizeXmlList(txt){
       const parsed = new XmlToJson().parse(txt);
-      // best-effort extraction for OData v2 XML
       const feed = parsed && parsed.feed;
       const entries = feed && feed.entry ? (Array.isArray(feed.entry) ? feed.entry : [feed.entry]) : [];
       const list = [];
       for (const en of entries){
         const props = (en && en.content && (en.content["m:properties"] || en.content.properties)) || {};
         list.push({
-          messageId: props.MessageGuid || props.MessageID || props.MessageId || '',
-          status: props.Status || 'FAILED',
-          errorText: props.ErrorText || props.Error || '',
-          errorDetails: props.ErrorText || props.Error || '',
+          messageId: String(props.MessageGuid || props.MessageID || props.MessageId || ''),
+          status: String(props.Status || 'FAILED'),
+          errorText: String(props.ErrorText || props.Error || ''),
           logStart: props.LogStart || null,
-          integrationFlowName: props.IntegrationFlowName || symbolicName
+          integrationFlowName: String(props.IntegrationFlowName || symbolicName)
         });
       }
       return list;
     }
+
+    // 1) Get the list of failed logs (JSON first, then XML fallback)
+    let logs = [];
+    try{
+      const txt = await http('GET', baseLogs + logsQs, 'application/json');
+      logs = normalizeJsonList(txt);
+    }catch(_e){ logs = []; }
+    if (!Array.isArray(logs) || logs.length === 0){
+      const xmlTxt = await http('GET', baseLogs + `?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$top=${encodeURIComponent(String(top))}`, 'application/xml');
+      logs = normalizeXmlList(xmlTxt);
+    }
+
+    // 2) For each message, fetch detailed error info
+    async function fetchErrorDetailsFor(messageId){
+      if (!messageId) return '';
+      const baseErr = '/' + state.urlExtension + 'odata/api/v1/MessageProcessingLogErrorInformations';
+      const errFilter = `?$filter=${encodeURIComponent("MessageGuid eq '"+messageId+"'")}&$format=json`;
+      try{
+        const txt = await http('GET', baseErr + errFilter, 'application/json');
+        let json; try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
+        const arr = (json && (json.value || (json.d && json.d.results))) || [];
+        const details = arr.map(e=> e.ErrorText || e.LongText || e.Message || e.Text || e.LogMessage || '').filter(Boolean).join(' | ');
+        if (details) return details;
+      }catch(_e){ /* fall back to XML */ }
+      const xmlTxt = await http('GET', baseErr + `?$filter=${encodeURIComponent("MessageGuid eq '"+messageId+"'")}`, 'application/xml');
+      const parsed = new XmlToJson().parse(xmlTxt);
+      const feed = parsed && parsed.feed;
+      const entries = feed && feed.entry ? (Array.isArray(feed.entry) ? feed.entry : [feed.entry]) : [];
+      const list = [];
+      for (const en of entries){
+        const props = (en && en.content && (en.content["m:properties"] || en.content.properties)) || {};
+        list.push(props.ErrorText || props.LongText || props.Message || props.Text || props.LogMessage || '');
+      }
+      return list.filter(Boolean).join(' | ');
+    }
+
+    const results = [];
+    const concurrency = 6;
+    for (let i=0;i<logs.length;i+=concurrency){
+      const slice = logs.slice(i, i+concurrency);
+      const part = await Promise.all(slice.map(async m=>({
+        messageId: m.messageId,
+        status: m.status,
+        errorText: m.errorText,
+        errorDetails: await fetchErrorDetailsFor(m.messageId),
+        logStart: m.logStart,
+        integrationFlowName: m.integrationFlowName
+      })));
+      results.push(...part);
+    }
+    return results;
   }
 
   // Handle requests from popup
