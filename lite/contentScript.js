@@ -5,6 +5,9 @@
     tenant: location.host,
     runtimeLocations: [],
     currentPlatform: /cfapps/.test(location.host) ? "cf" : "neo",
+    cachedRows: [],
+    pageIndex: 0,
+    batchSize: 25,
   };
 
   function absolutePath(href){
@@ -144,6 +147,12 @@
       .cpi-lite-nav-btn{ display:flex; align-items:center; gap:8px; padding:8px 10px; margin:6px 8px; border-radius:6px; cursor:pointer; user-select:none;}
       .cpi-lite-nav-btn:hover{ background:rgba(0,0,0,.06) }
       .cpi-lite-hidden{ display:none !important }
+      .cpi-lite-controls{ display:flex; gap:12px; align-items:center; margin:12px 0 }
+      .cpi-lite-input{ padding:6px 8px; border:1px solid rgba(0,0,0,.2); border-radius:6px; width:110px }
+      .cpi-lite-btn{ padding:6px 12px; border:1px solid rgba(0,0,0,.2); border-radius:6px; background:#1f2d40; color:#fff; cursor:pointer }
+      .cpi-lite-btn:disabled{ opacity:.6; cursor:default }
+      .cpi-lite-pager{ display:flex; gap:8px; align-items:center; margin:10px 0 }
+      .cpi-lite-link{ color:#0a66c2; cursor:pointer; user-select:none }
     `;
     document.head.appendChild(style);
   }
@@ -185,13 +194,33 @@
 
     const body = document.createElement('div');
     body.className = 'cpi-lite-body';
+    // Controls
+    const controls = document.createElement('div');
+    controls.className = 'cpi-lite-controls';
+    controls.innerHTML = `
+      <label>BatchSize: <input id="cpi-lite-batch" class="cpi-lite-input" type="number" min="1" step="1" value="${state.batchSize}"></label>
+      <button id="cpi-lite-load" class="cpi-lite-btn">Get Message Overview</button>
+      <span id="cpi-lite-status" style="margin-left:8px; color:#666;"></span>
+    `;
+    body.appendChild(controls);
+    // Pagination section
+    const pager = document.createElement('div');
+    pager.className = 'cpi-lite-pager';
+    pager.innerHTML = `
+      <span id="cpi-lite-prev" class="cpi-lite-link">Prev</span>
+      <span id="cpi-lite-page"></span>
+      <span id="cpi-lite-next" class="cpi-lite-link">Next</span>
+    `;
     const table = document.createElement('table');
     table.className = 'cpi-lite-table';
     table.innerHTML = '<thead><tr><th style="width:55%">iFlow</th><th style="width:22%" class="cpi-lite-count">Completed</th><th style="width:23%" class="cpi-lite-count">Failed</th></tr></thead><tbody></tbody>';
     const tbody = table.querySelector('tbody');
     const fmt = n=> new Intl.NumberFormat().format(n);
-    rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
-    for (const r of rows){
+    const rowsToRender = Array.isArray(rows) ? rows : [];
+    rowsToRender.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+    const start = state.pageIndex * state.batchSize;
+    const pageRows = rowsToRender.slice(start, start + state.batchSize);
+    for (const r of pageRows){
       const tr = document.createElement('tr');
       const tdName = document.createElement('td');
       const tdOk = document.createElement('td');
@@ -207,10 +236,40 @@
       tbody.appendChild(tr);
     }
     body.appendChild(table);
+    body.appendChild(pager);
 
     panel.appendChild(header);
     panel.appendChild(body);
     root.appendChild(panel);
+
+    // Wire controls
+    const batchInput = root.querySelector('#cpi-lite-batch');
+    const prev = root.querySelector('#cpi-lite-prev');
+    const next = root.querySelector('#cpi-lite-next');
+    const page = root.querySelector('#cpi-lite-page');
+    const status = root.querySelector('#cpi-lite-status');
+    const totalPages = Math.max(1, Math.ceil(rowsToRender.length / state.batchSize));
+    page.textContent = `${rowsToRender.length ? state.pageIndex+1 : 0} / ${totalPages}`;
+    prev.onclick = ()=>{ if (state.pageIndex>0){ state.pageIndex--; renderInPage(state.cachedRows); }};
+    next.onclick = ()=>{ if ((state.pageIndex+1) < totalPages){ state.pageIndex++; renderInPage(state.cachedRows); }};
+    batchInput.onchange = ()=>{
+      const v = Math.max(1, parseInt(batchInput.value,10)||1);
+      state.batchSize = v;
+      state.pageIndex = 0;
+      renderInPage(state.cachedRows);
+    };
+    root.querySelector('#cpi-lite-load')?.addEventListener('click', async ()=>{
+      status.textContent = 'Loading...';
+      try{
+        const data = await collect();
+        state.cachedRows = Array.isArray(data)? data : [];
+        state.pageIndex = 0;
+        status.textContent = `Loaded ${state.cachedRows.length} iFlows`;
+        renderInPage(state.cachedRows);
+      }catch(e){
+        status.textContent = String(e && e.message || e);
+      }
+    });
   }
 
   function findMainContentContainer(){
@@ -282,13 +341,23 @@
     title.className = 'cpi-lite-title';
     title.textContent = 'CPI Helper Lite';
     header.appendChild(title);
+    const controls = document.createElement('div');
+    controls.className = 'cpi-lite-controls';
+    controls.innerHTML = `
+      <label>BatchSize: <input id="cpi-lite-batch" class="cpi-lite-input" type="number" min="1" step="1" value="${state.batchSize}"></label>
+      <button id="cpi-lite-load" class="cpi-lite-btn">Get Message Overview</button>
+      <span id="cpi-lite-status" style="margin-left:8px; color:#666;"></span>
+    `;
     const table = document.createElement('table');
     table.className = 'cpi-lite-table';
     table.innerHTML = '<thead><tr><th style="width:55%">iFlow</th><th style="width:22%" class="cpi-lite-count">Completed</th><th style="width:23%" class="cpi-lite-count">Failed</th></tr></thead><tbody></tbody>';
     const tbody = table.querySelector('tbody');
     const fmt = n=> new Intl.NumberFormat().format(n);
-    rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
-    for (const r of rows){
+    const rowsToRender = Array.isArray(rows) ? rows : [];
+    rowsToRender.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+    const start = state.pageIndex * state.batchSize;
+    const pageRows = rowsToRender.slice(start, start + state.batchSize);
+    for (const r of pageRows){
       const tr = document.createElement('tr');
       const tdName = document.createElement('td');
       const tdOk = document.createElement('td');
@@ -303,9 +372,48 @@
       tr.appendChild(tdFail);
       tbody.appendChild(tr);
     }
+    const pager = document.createElement('div');
+    pager.className = 'cpi-lite-pager';
+    const totalPages = Math.max(1, Math.ceil(rowsToRender.length / state.batchSize));
+    pager.innerHTML = `
+      <span id="cpi-lite-prev" class="cpi-lite-link">Prev</span>
+      <span id="cpi-lite-page">${rowsToRender.length ? state.pageIndex+1 : 0} / ${totalPages}</span>
+      <span id="cpi-lite-next" class="cpi-lite-link">Next</span>
+    `;
     page.appendChild(header);
+    page.appendChild(controls);
     page.appendChild(table);
+    page.appendChild(pager);
     root.appendChild(page);
+
+    // Wire controls
+    const batchInput = root.querySelector('#cpi-lite-batch');
+    const status = root.querySelector('#cpi-lite-status');
+    const prev = root.querySelector('#cpi-lite-prev');
+    const next = root.querySelector('#cpi-lite-next');
+    prev.onclick = ()=>{ if (state.pageIndex>0){ state.pageIndex--; renderFullPage(state.cachedRows); }};
+    next.onclick = ()=>{
+      const total = Math.max(1, Math.ceil(rowsToRender.length / state.batchSize));
+      if ((state.pageIndex+1) < total){ state.pageIndex++; renderFullPage(state.cachedRows); }
+    };
+    batchInput.onchange = ()=>{
+      const v = Math.max(1, parseInt(batchInput.value,10)||1);
+      state.batchSize = v;
+      state.pageIndex = 0;
+      renderFullPage(state.cachedRows);
+    };
+    root.querySelector('#cpi-lite-load')?.addEventListener('click', async ()=>{
+      status.textContent = 'Loading...';
+      try{
+        const data = await collect();
+        state.cachedRows = Array.isArray(data)? data : [];
+        state.pageIndex = 0;
+        status.textContent = `Loaded ${state.cachedRows.length} iFlows`;
+        renderFullPage(state.cachedRows);
+      }catch(e){
+        status.textContent = String(e && e.message || e);
+      }
+    });
   }
 
   function findSplitDetailContainer(){
@@ -342,16 +450,16 @@
         const floatRoot = document.getElementById('cpi-lite-panel-root');
         if (floatRoot) floatRoot.remove();
         // Initial skeleton while data loads
+        state.cachedRows = [];
+        state.pageIndex = 0;
         renderFullPage([]);
         activateFullPageMode();
-        const data = await collect();
-        renderFullPage(data||[]);
-        activateFullPageMode();
+        // Wait for user to click 'Get Message Overview'
       } else {
         // Fallback: show floating right-side panel
+        state.cachedRows = [];
+        state.pageIndex = 0;
         renderInPage([]);
-        const data = await collect();
-        renderInPage(data||[]);
       }
     }catch(e){
       // In case of error, still show panel with message
