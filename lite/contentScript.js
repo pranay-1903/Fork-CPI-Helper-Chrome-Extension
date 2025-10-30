@@ -165,25 +165,43 @@
     // 2) For each message, fetch detailed error info
     async function fetchErrorDetailsFor(messageId){
       if (!messageId) return '';
-      const baseErr = '/' + state.urlExtension + 'odata/api/v1/MessageProcessingLogErrorInformations';
-      const errFilter = `?$filter=${encodeURIComponent("MessageGuid eq '"+messageId+"'")}&$format=json`;
-      try{
-        const txt = await http('GET', baseErr + errFilter, 'application/json');
-        let json; try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
-        const arr = (json && (json.value || (json.d && json.d.results))) || [];
-        const details = arr.map(e=> e.ErrorText || e.LongText || e.Message || e.Text || e.LogMessage || '').filter(Boolean).join(' | ');
-        if (details) return details;
-      }catch(_e){ /* fall back to XML */ }
-      const xmlTxt = await http('GET', baseErr + `?$filter=${encodeURIComponent("MessageGuid eq '"+messageId+"'")}`, 'application/xml');
-      const parsed = new XmlToJson().parse(xmlTxt);
-      const feed = parsed && parsed.feed;
-      const entries = feed && feed.entry ? (Array.isArray(feed.entry) ? feed.entry : [feed.entry]) : [];
-      const list = [];
-      for (const en of entries){
-        const props = (en && en.content && (en.content["m:properties"] || en.content.properties)) || {};
-        list.push(props.ErrorText || props.LongText || props.Message || props.Text || props.LogMessage || '');
+      const escId = String(messageId).replace(/'/g, "''");
+      const base = '/' + state.urlExtension + 'odata/api/v1/MessageProcessingLogs';
+      const candidatesJson = [
+        `${base}('${encodeURIComponent(escId)}')/ErrorInformation?$format=json`,
+        `${base}(MessageGuid='${encodeURIComponent(escId)}')/ErrorInformation?$format=json`
+      ];
+      for (const url of candidatesJson){
+        try{
+          const txt = await http('GET', url, 'application/json');
+          let json; try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
+          const arr = (json && (json.value || (json.d && json.d.results))) || [];
+          const details = arr.map(e=> e.ErrorText || e.LongText || e.Message || e.Text || e.LogMessage || '').filter(Boolean).join(' | ');
+          if (details) return details;
+        }catch(_e){/* try next */}
       }
-      return list.filter(Boolean).join(' | ');
+
+      // XML fallbacks for both key syntaxes
+      const candidatesXml = [
+        `${base}('${encodeURIComponent(escId)}')/ErrorInformation`,
+        `${base}(MessageGuid='${encodeURIComponent(escId)}')/ErrorInformation`
+      ];
+      for (const url of candidatesXml){
+        try{
+          const xmlTxt = await http('GET', url, 'application/xml');
+          const parsed = new XmlToJson().parse(xmlTxt);
+          const feed = parsed && (parsed.feed || parsed['m:feed']);
+          const entries = feed && feed.entry ? (Array.isArray(feed.entry) ? feed.entry : [feed.entry]) : [];
+          const list = [];
+          for (const en of entries){
+            const props = (en && en.content && (en.content["m:properties"] || en.content.properties)) || {};
+            list.push(props.ErrorText || props.LongText || props.Message || props.Text || props.LogMessage || '');
+          }
+          const details = list.filter(Boolean).join(' | ');
+          if (details) return details;
+        }catch(_e){/* try next */}
+      }
+      return '';
     }
 
     const results = [];
