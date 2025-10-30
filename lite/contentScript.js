@@ -118,16 +118,30 @@
       try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
       const arr = (json && (json.value || (json.d && json.d.results))) || [];
       const toArray = (v)=> Array.isArray(v) ? v : (v && v.results ? v.results : (v ? [v] : []));
+      const getAny = (obj, names)=>{
+        for (const name of names){
+          if (obj == null) break;
+          if (Object.prototype.hasOwnProperty.call(obj, name)) return obj[name];
+          const lower = Object.keys(obj).find(k=>k.toLowerCase()===name.toLowerCase());
+          if (lower) return obj[lower];
+        }
+        return undefined;
+      };
       return arr.map(x=>{
-        const errs = toArray(x.ErrorInformation || x.errorInformation);
-        const details = errs.map(e=> e.ErrorText || e.LongText || e.Message || e.Text || e.LogMessage || '').filter(Boolean).join(' | ');
+        const errs = toArray(getAny(x, ['ErrorInformation']));
+        const details = errs.map(e=> getAny(e, ['ErrorText','LongText','Message','Text','LogMessage']) || '').filter(Boolean).join(' | ');
+        const id = getAny(x, ['MessageGuid','MessageID','MessageId','Guid','GUID','MessageGUID']);
+        const status = getAny(x, ['Status']) || 'FAILED';
+        const errText = getAny(x, ['ErrorText','Error','ErrorMessage']) || '';
+        const logStart = getAny(x, ['LogStart','TimeStamp']) || null;
+        const iflow = getAny(x, ['IntegrationFlowName']) || symbolicName;
         return {
-          messageId: x.MessageGuid || x.MessageID || x.MessageId || x.Guid || '',
-          status: x.Status || 'FAILED',
-          errorText: x.ErrorText || x.Error || '',
-          errorDetails: details || x.ErrorText || x.Error || '',
-          logStart: x.LogStart || x.TimeStamp || null,
-          integrationFlowName: x.IntegrationFlowName || symbolicName
+          messageId: id != null ? String(id) : '',
+          status: String(status),
+          errorText: String(errText),
+          errorDetails: String(details || errText),
+          logStart,
+          integrationFlowName: String(iflow)
         };
       });
     }catch(e){
