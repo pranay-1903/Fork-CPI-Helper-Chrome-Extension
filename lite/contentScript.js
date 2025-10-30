@@ -143,6 +143,7 @@
       .cpi-lite-fail{ color:#c53030 }
       .cpi-lite-nav-btn{ display:flex; align-items:center; gap:8px; padding:8px 10px; margin:6px 8px; border-radius:6px; cursor:pointer; user-select:none;}
       .cpi-lite-nav-btn:hover{ background:rgba(0,0,0,.06) }
+      .cpi-lite-hidden{ display:none !important }
     `;
     document.head.appendChild(style);
   }
@@ -307,6 +308,32 @@
     root.appendChild(page);
   }
 
+  function findSplitDetailContainer(){
+    // Preferred host content area where Sprintegrate injects
+    const detail = document.querySelector('#shell--splitApp-Detail');
+    if (detail) return detail;
+    const mainCont = document.querySelector('#mainPage-cont');
+    return mainCont ? mainCont : null;
+  }
+
+  function activateFullPageMode(){
+    const detail = findSplitDetailContainer();
+    if (!detail) return false;
+    // Hide all other top-level children while our page is active
+    Array.from(detail.children).forEach((child)=>{
+      if (child.id !== 'cpi-lite-page-root') child.classList.add('cpi-lite-hidden');
+    });
+    return true;
+  }
+
+  function deactivateFullPageMode(){
+    const detail = findSplitDetailContainer();
+    if (!detail) return;
+    Array.from(detail.children).forEach((child)=> child.classList.remove('cpi-lite-hidden'));
+    const root = document.getElementById('cpi-lite-page-root');
+    if (root) root.remove();
+  }
+
   async function openInPage(){
     try{
       const main = findMainContentContainer();
@@ -316,8 +343,10 @@
         if (floatRoot) floatRoot.remove();
         // Initial skeleton while data loads
         renderFullPage([]);
+        activateFullPageMode();
         const data = await collect();
         renderFullPage(data||[]);
+        activateFullPageMode();
       } else {
         // Fallback: show floating right-side panel
         renderInPage([]);
@@ -366,6 +395,13 @@
     item.appendChild(text);
     item.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); openInPage(); });
 
+    // Deactivate our page when another side-nav item is clicked
+    parent.addEventListener('click', (e)=>{
+      if (!item.contains(e.target)){
+        deactivateFullPageMode();
+      }
+    });
+
     // Try to append in a reasonable place: after first group of items
     try{ parent.appendChild(item); }
     catch(_e){ document.body.appendChild(item); }
@@ -388,6 +424,10 @@
       if (root){ root.className = isDark() ? 'cpi-lite-dark' : ''; }
     });
     obs.observe(document.documentElement, { attributes:true, attributeFilter:['class'] });
+
+    // Hide our page on URL/navigation changes
+    window.addEventListener('hashchange', deactivateFullPageMode);
+    window.addEventListener('popstate', deactivateFullPageMode);
   }
 
   if (document.readyState === 'loading'){
