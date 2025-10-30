@@ -304,19 +304,10 @@
 
   async function openInPage(){
     try{
-      // Prefer full-page render if we find the main content area
-      const main = findMainContentContainer();
-      if (main){
-        renderFullPage([]);
-      } else {
-        renderInPage([]);
-      }
+      // Always use the non-invasive right-side panel to avoid interfering with host layout
+      renderInPage([]);
       const data = await collect();
-      if (main){
-        renderFullPage(data||[]);
-      } else {
-        renderInPage(data||[]);
-      }
+      renderInPage(data||[]);
     }catch(e){
       // In case of error, still show panel with message
       ensureStyles();
@@ -357,7 +348,7 @@
     text.textContent = 'CPI Helper Lite';
     item.appendChild(icon);
     item.appendChild(text);
-    item.addEventListener('click', openInPage);
+    item.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); openInPage(); });
 
     // Try to append in a reasonable place: after first group of items
     try{ parent.appendChild(item); }
