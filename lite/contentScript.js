@@ -140,12 +140,13 @@
       const list = [];
       for (const en of entries){
         const props = (en && en.content && (en.content["m:properties"] || en.content.properties)) || {};
+        const get = (name)=> props[name] ?? props['d:'+name] ?? props['m:'+name];
         list.push({
-          messageId: String(props.MessageGuid || props.MessageID || props.MessageId || ''),
-          status: String(props.Status || 'FAILED'),
-          errorText: String(props.ErrorText || props.Error || ''),
-          logStart: props.LogStart || null,
-          integrationFlowName: String(props.IntegrationFlowName || symbolicName)
+          messageId: String(get('MessageGuid') || get('MessageID') || get('MessageId') || ''),
+          status: String(get('Status') || 'FAILED'),
+          errorText: String(get('ErrorText') || get('Error') || ''),
+          logStart: get('LogStart') || null,
+          integrationFlowName: String(get('IntegrationFlowName') || symbolicName)
         });
       }
       return list;
@@ -195,7 +196,8 @@
           const list = [];
           for (const en of entries){
             const props = (en && en.content && (en.content["m:properties"] || en.content.properties)) || {};
-            list.push(props.ErrorText || props.LongText || props.Message || props.Text || props.LogMessage || '');
+            const get = (name)=> props[name] ?? props['d:'+name] ?? props['m:'+name];
+            list.push(get('ErrorText') || get('LongText') || get('Message') || get('Text') || get('LogMessage') || '');
           }
           const details = list.filter(Boolean).join(' | ');
           if (details) return details;
