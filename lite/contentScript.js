@@ -110,20 +110,26 @@
     const esc = (s)=>String(s).replace(/'/g, "''");
     const filter = `IntegrationFlowName eq '${esc(symbolicName)}' and Status eq 'FAILED'`;
     const base = '/' + state.urlExtension + 'odata/api/v1/MessageProcessingLogs';
-    const qs = `?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$top=${encodeURIComponent(String(top))}&$format=json`;
+    const qs = `?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$top=${encodeURIComponent(String(top))}&$format=json&$expand=${encodeURIComponent('ErrorInformation')}`;
     // Try JSON first
     try{
       const txt = await http('GET', base + qs, 'application/json');
       let json;
       try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
       const arr = (json && (json.value || (json.d && json.d.results))) || [];
-      return arr.map(x=>({
-        messageId: x.MessageGuid || x.MessageID || x.MessageId || x.Guid || '',
-        status: x.Status || 'FAILED',
-        errorText: x.ErrorText || x.Error || '',
-        logStart: x.LogStart || x.TimeStamp || null,
-        integrationFlowName: x.IntegrationFlowName || symbolicName
-      }));
+      const toArray = (v)=> Array.isArray(v) ? v : (v && v.results ? v.results : (v ? [v] : []));
+      return arr.map(x=>{
+        const errs = toArray(x.ErrorInformation || x.errorInformation);
+        const details = errs.map(e=> e.ErrorText || e.LongText || e.Message || e.Text || e.LogMessage || '').filter(Boolean).join(' | ');
+        return {
+          messageId: x.MessageGuid || x.MessageID || x.MessageId || x.Guid || '',
+          status: x.Status || 'FAILED',
+          errorText: x.ErrorText || x.Error || '',
+          errorDetails: details || x.ErrorText || x.Error || '',
+          logStart: x.LogStart || x.TimeStamp || null,
+          integrationFlowName: x.IntegrationFlowName || symbolicName
+        };
+      });
     }catch(e){
       // Fallback to XML if JSON path is unavailable
       const txt = await http('GET', base + `?$filter=${encodeURIComponent(filter)}&$orderby=${encodeURIComponent('LogStart desc')}&$top=${encodeURIComponent(String(top))}`, 'application/xml');
@@ -138,6 +144,7 @@
           messageId: props.MessageGuid || props.MessageID || props.MessageId || '',
           status: props.Status || 'FAILED',
           errorText: props.ErrorText || props.Error || '',
+          errorDetails: props.ErrorText || props.Error || '',
           logStart: props.LogStart || null,
           integrationFlowName: props.IntegrationFlowName || symbolicName
         });
@@ -493,7 +500,7 @@
 
     const table = document.createElement('table');
     table.className = 'cpi-lite-table';
-    table.innerHTML = '<thead><tr><th style="width:36%">Message ID</th><th style="width:14%" class="cpi-lite-count">Status</th><th style="width:50%">Error Text</th></tr></thead><tbody></tbody>';
+    table.innerHTML = '<thead><tr><th style="width:30%">Message ID</th><th style="width:12%" class="cpi-lite-count">Status</th><th style="width:58%">Error Details</th></tr></thead><tbody></tbody>';
     const tbody = table.querySelector('tbody');
     for (const m of rows){
       const tr = document.createElement('tr');
@@ -503,7 +510,7 @@
       tdId.textContent = m.messageId || '';
       tdStatus.textContent = m.status || '';
       tdStatus.className = 'cpi-lite-count cpi-lite-fail';
-      tdErr.textContent = m.errorText || '';
+      tdErr.textContent = m.errorDetails || m.errorText || '';
       tr.appendChild(tdId); tr.appendChild(tdStatus); tr.appendChild(tdErr);
       tbody.appendChild(tr);
     }
@@ -537,7 +544,7 @@
     body.className = 'cpi-lite-body';
     const table = document.createElement('table');
     table.className = 'cpi-lite-table';
-    table.innerHTML = '<thead><tr><th style="width:36%">Message ID</th><th style="width:14%" class="cpi-lite-count">Status</th><th style="width:50%">Error Text</th></tr></thead><tbody></tbody>';
+    table.innerHTML = '<thead><tr><th style="width:30%">Message ID</th><th style="width:12%" class="cpi-lite-count">Status</th><th style="width:58%">Error Details</th></tr></thead><tbody></tbody>';
     const tbody = table.querySelector('tbody');
     for (const m of rows){
       const tr = document.createElement('tr');
@@ -547,7 +554,7 @@
       tdId.textContent = m.messageId || '';
       tdStatus.textContent = m.status || '';
       tdStatus.className = 'cpi-lite-count cpi-lite-fail';
-      tdErr.textContent = m.errorText || '';
+      tdErr.textContent = m.errorDetails || m.errorText || '';
       tr.appendChild(tdId); tr.appendChild(tdStatus); tr.appendChild(tdErr);
       tbody.appendChild(tr);
     }
