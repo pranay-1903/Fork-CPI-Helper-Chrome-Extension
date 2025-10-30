@@ -213,14 +213,41 @@
   }
 
   function findMainContentContainer(){
+    // Try a wide range of selectors used by UI5 ToolPage layouts
     const candidates = [
+      // Common ToolPage content wrappers
       document.querySelector('[id$="--toolPage-contentWrapper"] .sapTntToolPageContent'),
+      document.querySelector('[id$="--toolPage-contentWrapper"]'),
+      document.querySelector('[id$="--toolPage-content"]'),
       document.querySelector('.sapTntToolPageContent'),
+      document.querySelector('.sapTntToolPageMainContent'),
+      document.querySelector('.sapTntToolPageContentWrapper'),
+      // Shell/App containers seen in Integration Suite
       document.querySelector('#shell--content'),
+      document.querySelector('#shell--contentContainer'),
+      // Fallbacks
       document.querySelector('[id$="--pageContent"]'),
-      document.querySelector('main'),
+      document.querySelector('.fd-tool-page__content'),
+      document.querySelector('main')
     ];
-    return candidates.find(Boolean) || null;
+    const found = candidates.find(Boolean);
+    if (found) return found;
+    // As a last resort, pick the largest visible container right of the side nav
+    try{
+      const side = document.querySelector('[id$="--sideNavigation"], .sapTntSideNavigation');
+      const sideRight = side ? side.getBoundingClientRect().right : 240;
+      let best = null, bestArea = 0;
+      document.querySelectorAll('body > *').forEach(el=>{
+        const r = el.getBoundingClientRect();
+        if (r.width>400 && r.height>300 && r.left >= sideRight){
+          const area = r.width*r.height;
+          if (area>bestArea){ bestArea=area; best=el; }
+        }
+      });
+      return best;
+    }catch(_e){
+      return null;
+    }
   }
 
   function renderFullPage(rows){

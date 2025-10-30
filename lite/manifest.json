@@ -26,6 +26,17 @@
     "48": "images/v4/48.png",
     "128": "images/v4/128.png"
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "images/v4/*"
+      ],
+      "matches": [
+        "https://*.hana.ondemand.com/*",
+        "https://*.platform.sapcloud.cn/*"
+      ]
+    }
+  ],
   "content_scripts": [
     {
       "matches": [
