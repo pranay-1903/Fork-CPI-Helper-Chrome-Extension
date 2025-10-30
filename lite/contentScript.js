@@ -167,16 +167,41 @@
     async function fetchErrorDetailsFor(messageId){
       if (!messageId) return '';
       const escId = String(messageId).replace(/'/g, "''");
-      const base = '/' + state.urlExtension + 'odata/api/v1/MessageProcessingLogs';
+      const base = '/' + state.urlExtension + 'odata/api/v1/';
+
+      // Helper to decode OData list for both v2/v4 JSON
+      const decodeList = (txt)=>{
+        try{
+          const j = JSON.parse(txt);
+          return (j && (j.value || (j.d && j.d.results))) || [];
+        }catch(_e){ return []; }
+      };
+
+      // Strategy A (DEV-like): Runs -> RunSteps -> collect RunStep.Error
+      try{
+        const runsTxt = await http('GET', `${base}MessageProcessingLogs('${encodeURIComponent(escId)}')/Runs?$inlinecount=allpages&$format=json&$top=200`, 'application/json');
+        const runs = decodeList(runsTxt);
+        if (Array.isArray(runs) && runs.length){
+          const first = runs[0] || {};
+          const overall = first.OverallState || first.Status;
+          const runId = (runs.length>1 && overall !== 'COMPLETED' && overall !== 'ESCALATED') ? (runs[1] && runs[1].Id) : (first && first.Id);
+          if (runId){
+            const stepsTxt = await http('GET', `${base}MessageProcessingLogRuns('${encodeURIComponent(runId)}')/RunSteps?$inlinecount=allpages&$format=json`, 'application/json');
+            const steps = decodeList(stepsTxt).filter(s=> s && (s.StepStop != null));
+            const errors = steps.map(s=> s.Error || s.LogMessage || '').filter(Boolean);
+            if (errors.length) return errors.join(' | ');
+          }
+        }
+      }catch(_e){ /* proceed to strategy B */ }
+
+      // Strategy B: ErrorInformation navigation on the specific log entity
       const candidatesJson = [
-        `${base}('${encodeURIComponent(escId)}')/ErrorInformation?$format=json`,
-        `${base}(MessageGuid='${encodeURIComponent(escId)}')/ErrorInformation?$format=json`
+        `${base}MessageProcessingLogs('${encodeURIComponent(escId)}')/ErrorInformation?$format=json`,
+        `${base}MessageProcessingLogs(MessageGuid='${encodeURIComponent(escId)}')/ErrorInformation?$format=json`
       ];
       for (const url of candidatesJson){
         try{
-          const txt = await http('GET', url, 'application/json');
-          let json; try{ json = JSON.parse(txt); }catch(_e){ json = {}; }
-          const arr = (json && (json.value || (json.d && json.d.results))) || [];
+          const arr = decodeList(await http('GET', url, 'application/json'));
           const details = arr.map(e=> e.ErrorText || e.LongText || e.Message || e.Text || e.LogMessage || '').filter(Boolean).join(' | ');
           if (details) return details;
         }catch(_e){/* try next */}
@@ -184,8 +209,8 @@
 
       // XML fallbacks for both key syntaxes
       const candidatesXml = [
-        `${base}('${encodeURIComponent(escId)}')/ErrorInformation`,
-        `${base}(MessageGuid='${encodeURIComponent(escId)}')/ErrorInformation`
+        `${base}MessageProcessingLogs('${encodeURIComponent(escId)}')/ErrorInformation`,
+        `${base}MessageProcessingLogs(MessageGuid='${encodeURIComponent(escId)}')/ErrorInformation`
       ];
       for (const url of candidatesXml){
         try{
